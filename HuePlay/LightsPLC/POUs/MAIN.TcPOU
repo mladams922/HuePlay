@@ -1,0 +1,313 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.11">
+  <POU Name="MAIN" Id="{ecb56928-c082-44ca-97ca-1d3ddd69cd92}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	hueClient:	FB_IotHttpClient := (sHostName := '192.168.1.53', bKeepAlive := TRUE, tConnectionTimeout := T#5S);
+	hueRequest:	FB_IotHttpRequest;
+	
+	jsonParser:	FB_JSONDomParser;
+	jsonWriter:	FB_JsonSaxWriter;
+	jsonDoc:	SJsonValue;
+	jsonLight1:	SJsonValue;
+	jsonLight1Status:	SJsonValue;
+	jsonLightOn:	SJsonValue;
+	jsonLightBrightness:	SJsonValue;
+	jsonLightHue:	SJsonValue;
+	jsonLightSat:	SJsonValue;
+	
+	Light1On:	BOOL;
+	Light1Brightness:	DINT;
+	Light1Hue:	DINT;
+	Light1Sat:	DINT;
+	
+	sContent:	STRING(2048);
+	sCommand:	STRING;
+	
+	bGetLights:	BOOL;
+	nState:	INT;
+	apiKey:	STRING := 'S9U3UinAsoFCoKTF8iFRW-jewXsCee9qjEFFEYHf';
+	tempURI:	STRING;
+	
+	bLightSetOn	AT %I*:	BOOL;
+	nLightSetBri:	INT;
+	nLightSetHue	AT %I*:	UINT;
+	nLightSetHueAuto:	UDINT;
+	nLightSetSat:	INT;
+	
+	Pot1	AT %I*:	INT;
+	Pot2	AT %I*: INT;
+	
+	Timer:	TON;
+	rtSend:	R_TRIG;
+	bStep: BOOL;
+	bConnected: BOOL;
+	bRun: BOOL;
+	nErrorCount:	UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nLightSetBri := F_Scale(Pot1);
+nLightSetSat := F_Scale(Pot2);
+
+IF NOT hueClient.bConfigured THEN
+	hueClient.nHostPort := 80;
+	hueClient.stTLS.bNoServerCertCheck := FALSE;
+END_IF
+
+IF bGetLights THEN
+	bGetLights := FALSE;
+	nState := 10;
+END_IF
+
+Timer( IN := NOT Timer.Q, PT := T#100MS);
+rtSend(CLK := Timer.Q);
+
+IF hueClient.bConnected THEN
+	bConnected := TRUE;
+END_IF
+
+CASE nState OF
+	0:
+		IF (bStep OR bRun) AND hueClient.bConfigured THEN
+			bStep := FALSE;
+			nState := nState + 1;
+		END_IF
+		
+	1:
+		jsonWriter.StartObject();
+		jsonWriter.AddKey('on');
+		jsonWriter.AddBool(bLightSetOn);
+		jsonWriter.AddKey('sat');
+		jsonWriter.AddUdint(nLightSetSat);
+		jsonWriter.AddKey('bri');
+		jsonWriter.AddUdint(nLightSetBri);
+		jsonWriter.AddKey('hue');
+		jsonWriter.AddUdint(nLightSetHueAuto);
+		jsonWriter.EndObject();
+		sCommand := jsonWriter.GetDocument();
+		jsonWriter.ResetDocument();
+		nState := nState + 1;
+		
+	2:
+		tempURI := CONCAT(CONCAT('/api/', apiKey), '/lights/1/state');
+		IF hueRequest.SendRequest(sUri := tempURI,
+									fbClient := hueClient,
+									eRequestType := ETcIotHttpRequestType.HTTP_PUT,
+									pContent := ADR(sCommand),
+									nContentSize := SIZEOF(sCommand),
+									fbHeader := 0) THEN
+			nState := nState + 1;
+		END_IF
+		
+	3:
+		IF NOT hueRequest.bBusy THEN
+			IF hueRequest.bError THEN
+				nErrorCount := nErrorCount + 1;
+				nState := 1;
+			ELSE
+				IF (bStep OR bRun) THEN
+					bStep := FALSE;
+					nState := nState + 1;
+				END_IF
+			END_IF
+		END_IF
+		
+	4:
+		hueClient.Disconnect();
+		IF (bStep OR bRun) AND NOT hueClient.bConnected THEN
+			bStep := FALSE;
+			nState := nState + 1;
+		END_IF
+		
+	5:
+		IF (bStep OR bRun) THEN
+			bStep := FALSE;
+			nState := 0;
+		END_IF
+		
+END_CASE
+
+(*CASE nState OF
+	0: //IDLE
+		IF rtSend.Q THEN
+			nState := nState + 1;
+		END_IF
+	
+	1:
+		nLightSetHueAuto := nLightSetHueAuto + 5000;
+		IF nLightSetHueAuto = 65000 THEN
+			nLightSetHueAuto := 0;
+		END_IF
+		jsonWriter.StartObject();
+		jsonWriter.AddKey('on');
+		jsonWriter.AddBool(bLightSetOn);
+		jsonWriter.AddKey('sat');
+		jsonWriter.AddUdint(nLightSetSat);
+		jsonWriter.AddKey('bri');
+		jsonWriter.AddUdint(nLightSetBri);
+		jsonWriter.AddKey('hue');
+		jsonWriter.AddUdint(nLightSetHueAuto);
+		jsonWriter.EndObject();
+		sCommand := jsonWriter.GetDocument();
+		jsonWriter.ResetDocument();
+		nState := nState + 1;
+
+	2:
+		tempURI := CONCAT(CONCAT('/api/', apiKey), '/lights/1/state');
+		IF hueRequest.SendRequest(sUri := tempURI,
+									fbClient := hueClient,
+									eRequestType := ETcIotHttpRequestType.HTTP_PUT,
+									pContent := ADR(sCommand),
+									nContentSize := SIZEOF(sCommand),
+									fbHeader := 0) THEN
+			nState := nState + 1;
+		END_IF
+		
+	3:
+		IF NOT hueRequest.bBusy THEN
+			IF hueRequest.bError THEN
+				nState := 500;
+			ELSE
+				nState := 10;
+			END_IF
+		END_IF
+	
+	10:	//Get Light Status
+		tempURI := CONCAT(CONCAT('/api/', apiKey),'/lights');
+		IF hueRequest.SendRequest(sUri := tempURI,
+								fbClient := hueClient,
+								eRequestType := ETciotHttpRequestType.HTTP_GET,
+								0, 0, 0) THEN
+			nState := nState + 1;
+		END_IF
+		
+	11:
+		IF NOT hueRequest.bBusy THEN
+			IF hueRequest.bError THEN
+				nState := 500;
+			ELSE
+				hueRequest.GetContent(pContent := ADR(sContent),
+										nContentSize := SIZEOF(sContent),
+										bSetNullTermination := TRUE);
+				IF hueRequest.nStatusCode >= 200 AND hueRequest.nStatusCode < 300 THEN
+					jsonDoc := hueRequest.GetJsonDomContent(jsonParser);
+					jsonLight1 := jsonParser.FindMember(jsonDoc, '1');
+					jsonLight1Status := jsonParser.FindMember(jsonLight1, 'state');
+					jsonLightOn := jsonParser.FindMember(jsonLight1Status, 'on');
+					jsonLightBrightness := jsonParser.FindMember(jsonLight1Status, 'bri');
+					jsonLightHue := jsonParser.FindMember(jsonLight1Status, 'hue');
+					jsonLightSat := jsonParser.FindMember(jsonLight1Status, 'sat');
+					
+					Light1On := jsonParser.GetBool(jsonLightOn);
+					Light1Brightness := jsonParser.GetInt(jsonLightBrightness);
+					Light1Hue := jsonParser.GetInt(jsonLightHue);
+					Light1Sat := jsonParser.GetInt(jsonLightSat);
+				END_IF
+				nState := 0;
+			END_IF
+		END_IF
+		
+END_CASE*)
+
+hueClient.Execute();]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="103" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="247" Count="0" />
+      <LineId Id="199" Count="0" />
+      <LineId Id="261" Count="1" />
+      <LineId Id="260" Count="0" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="204" Count="1" />
+      <LineId Id="221" Count="1" />
+      <LineId Id="224" Count="11" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="236" Count="1" />
+      <LineId Id="239" Count="7" />
+      <LineId Id="238" Count="0" />
+      <LineId Id="248" Count="1" />
+      <LineId Id="251" Count="1" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="253" Count="1" />
+      <LineId Id="257" Count="0" />
+      <LineId Id="259" Count="0" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="258" Count="0" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="207" Count="1" />
+      <LineId Id="217" Count="0" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="214" Count="1" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="134" Count="1" />
+      <LineId Id="106" Count="1" />
+      <LineId Id="154" Count="3" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="110" Count="8" />
+      <LineId Id="121" Count="2" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="136" Count="2" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="139" Count="8" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="151" Count="1" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="25" Count="1" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="34" Count="4" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="62" Count="1" />
+      <LineId Id="66" Count="1" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="77" Count="1" />
+      <LineId Id="82" Count="2" />
+      <LineId Id="90" Count="4" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

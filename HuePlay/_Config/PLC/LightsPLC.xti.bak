@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<TcSmItem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.beckhoff.com/schemas/2012/07/TcSmProject" TcSmVersion="1.0" TcVersion="3.1.4024.29" ClassName="CNestedPlcProjDef">
+	<Project GUID="{5116CC36-E2AB-47F6-8474-AFEC761A5C7E}" Name="LightsPLC" PrjFilePath="..\..\LightsPLC\LightsPLC.plcproj" TmcFilePath="..\..\LightsPLC\LightsPLC.tmc" ReloadTmc="true" AmsPort="851" FileArchiveSettings="#x000e" SymbolicMapping="true">
+		<Instance Id="#x08502000" TcSmClass="TComPlcObjDef" KeepUnrestoredLinks="2">
+			<Name>LightsPLC Instance</Name>
+			<CLSID ClassFactory="TcPlc30">{08500001-0000-0000-F000-000000000064}</CLSID>
+			<Vars VarGrpType="1">
+				<Name>PlcTask Inputs</Name>
+				<Var>
+					<Name>MAIN.bLightSetOn</Name>
+					<Type>BOOL</Type>
+				</Var>
+				<Var>
+					<Name>MAIN.nLightSetHue</Name>
+					<Type>UINT</Type>
+				</Var>
+				<Var>
+					<Name>MAIN.Pot1</Name>
+					<Type>INT</Type>
+				</Var>
+				<Var>
+					<Name>MAIN.Pot2</Name>
+					<Type>INT</Type>
+				</Var>
+			</Vars>
+			<Contexts>
+				<Context>
+					<Id NeedCalleeCall="true">0</Id>
+					<Name>PlcTask</Name>
+					<ManualConfig>
+						<OTCID>#x02010030</OTCID>
+					</ManualConfig>
+					<Priority>20</Priority>
+					<CycleTime>10000000</CycleTime>
+				</Context>
+			</Contexts>
+			<TaskPouOids>
+				<TaskPouOid Prio="20" OTCID="#x08502001"/>
+			</TaskPouOids>
+		</Instance>
+	</Project>
+	<Mappings>
+		<OwnerA Name="LightsPLC Instance">
+			<OwnerB Name="TIID^Device 1 (EtherCAT)^Term 1 (EK1200)^Term 2 (EL1859)">
+				<Link VarA="PlcTask Inputs^MAIN.bLightSetOn" VarB="Channel 1^Input" Size="1"/>
+			</OwnerB>
+			<OwnerB Name="TIID^Device 1 (EtherCAT)^Term 1 (EK1200)^Term 4 (EL3255)">
+				<Link VarA="PlcTask Inputs^MAIN.Pot1" VarB="AI Standard Channel 1^Value"/>
+				<Link VarA="PlcTask Inputs^MAIN.Pot2" VarB="AI Standard Channel 2^Value"/>
+			</OwnerB>
+			<OwnerB Name="TIID^Device 1 (EtherCAT)^Term 1 (EK1200)^Term 5 (EL5151)">
+				<Link VarA="PlcTask Inputs^MAIN.nLightSetHue" VarB="ENC Inputs^Counter value"/>
+			</OwnerB>
+		</OwnerA>
+	</Mappings>
+</TcSmItem>
